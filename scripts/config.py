@@ -24,13 +24,13 @@ COMPETICIONES = [
     {"id": "bra", "nombre": "Brasileirão", "corto": "BRA", "espn": "bra.1", "fotmob": 268,
      "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
     {"id": "ucl", "nombre": "Champions League", "corto": "UCL", "espn": "uefa.champions", "fotmob": 42,
-     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
+     "amarillas_suspension": 3, "activa": True, "alineaciones": ALINEACIONES_COPA, "historial": "equipos"},
     {"id": "uel", "nombre": "Europa League", "corto": "UEL", "espn": "uefa.europa", "fotmob": 73,
-     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
+     "amarillas_suspension": 3, "activa": True, "alineaciones": ALINEACIONES_COPA, "historial": "equipos"},
     {"id": "lib", "nombre": "Copa Libertadores", "corto": "LIB", "espn": "conmebol.libertadores", "fotmob": 45,
-     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA, "historial": "equipos"},
     {"id": "sud", "nombre": "Copa Sudamericana", "corto": "SUD", "espn": "conmebol.sudamericana", "fotmob": 299,
-     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA, "historial": "equipos"},
 ]
 
 # Lineas de apuesta que se calculan

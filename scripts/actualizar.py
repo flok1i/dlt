@@ -59,20 +59,48 @@ def mismo_jugador(a, b):
 
 def equipo_espn(comp):
     t = comp["team"]
+    logo = t.get("logo") or next((l["href"] for l in t.get("logos", []) if "dark" not in l.get("rel", [])), None)
     return {"id": t["id"], "nombre": (t.get("shortDisplayName") or t["displayName"]).strip(),
-            "nombre_largo": t["displayName"].strip(), "logo": t.get("logo")}
+            "nombre_largo": t["displayName"].strip(), "logo": logo}
 
 
-def evento_compacto(e):
+def goles(comp):
+    s = comp.get("score")
+    return s.get("displayValue") if isinstance(s, dict) else s
+
+
+def evento_compacto(e, liga=None):
+    """Sirve tanto para el scoreboard de una liga como para el calendario de un equipo."""
     c = e["competitions"][0]
     eq = {x["homeAway"]: x for x in c["competitors"]}
+    estado = (e.get("status") or c.get("status") or {}).get("type", {}).get("state")
     return {
-        "id": e["id"], "fecha": e["date"], "estado": e["status"]["type"]["state"],
+        "id": e["id"], "fecha": e["date"], "estado": estado,
+        "liga": (e.get("league") or {}).get("slug") or liga,
+        "liga_nombre": (e.get("league") or {}).get("shortName"),
+        "temporada": (e.get("season") or {}).get("year"),
         "torneo": (e.get("season") or {}).get("slug"),
         "local": equipo_espn(eq["home"]), "visita": equipo_espn(eq["away"]),
-        "goles": [eq["home"].get("score"), eq["away"].get("score")],
+        "goles": [goles(eq["home"]), goles(eq["away"])],
         "estadio": (c.get("venue") or {}).get("fullName"),
     }
+
+
+def historial_equipo(equipo_id, minimo=15):
+    """Ultimos partidos oficiales jugados por un equipo en todas sus competiciones.
+    Si en la temporada actual no llega a `minimo`, completa con la anterior (que se cachea para siempre)."""
+    actual = fuentes.espn_equipo(equipo_id)
+    anio = (actual.get("requestedSeason") or {}).get("year")
+    eventos = [evento_compacto(e) for e in actual.get("events", [])]
+    oficiales = lambda lista: [e for e in lista if e["estado"] == "post" and "friendly" not in (e["liga"] or "")]
+    if len(oficiales(eventos)) < minimo and anio:
+        archivo = CACHE / "equipos" / f"{equipo_id}_{anio - 1}.json"
+        previa = leer(archivo)
+        if previa is None:
+            previa = [evento_compacto(e) for e in fuentes.espn_equipo(equipo_id, anio - 1).get("events", [])]
+            guardar(archivo, previa)
+        eventos += previa
+    return sorted(oficiales(eventos), key=lambda e: e["fecha"])[-minimo:]
 
 
 def calendario(comp, hoy):
@@ -90,7 +118,7 @@ def calendario(comp, hoy):
         if guardado is not None and f < hoy - timedelta(days=1):
             return guardado
         data = actual if f == hoy else fuentes.espn_dia(comp["espn"], f)
-        lista = [evento_compacto(e) for e in data.get("events", [])]
+        lista = [evento_compacto(e, comp["espn"]) for e in data.get("events", [])]
         guardar(archivo, lista)
         return lista
 
@@ -143,8 +171,7 @@ def partido_compacto(ev, s):
     return {**ev, "stats": stats if len(stats) == 2 else None, "jugadores": jugadores or None}
 
 
-def jugados_con_detalle(comp, eventos):
-    carpeta = CACHE / comp["id"] / "partidos"
+def jugados_con_detalle(comp, eventos, carpeta):
     jugados = [e for e in eventos if e["estado"] == "post"]
     faltan = [e for e in jugados if not (carpeta / f"{e['id']}.json").exists()]
     if faltan:
@@ -152,7 +179,7 @@ def jugados_con_detalle(comp, eventos):
 
     def bajar(e):
         try:
-            guardar(carpeta / f"{e['id']}.json", partido_compacto(e, fuentes.espn_partido(comp["espn"], e["id"])))
+            guardar(carpeta / f"{e['id']}.json", partido_compacto(e, fuentes.espn_partido(e.get("liga") or comp["espn"], e["id"])))
         except Exception as err:  # un partido que falla no frena el resto; se reintenta en la proxima corrida
             print(f"  ! no se pudo bajar {e['id']}: {err}")
 
@@ -234,13 +261,35 @@ def detalle_fotmob(match_id):
 
 # ---------------------------------------------------------------- armado
 
+MESES = {"January": "enero", "February": "febrero", "March": "marzo", "April": "abril", "May": "mayo",
+         "June": "junio", "July": "julio", "August": "agosto", "September": "septiembre", "October": "octubre",
+         "November": "noviembre", "December": "diciembre"}
+PARTE_MES = {"Early": "principios de", "Mid": "mediados de", "Late": "fines de"}
+
+
+def traducir_vuelta(txt):
+    """FotMob da la fecha de regreso en ingles ("Late December 2026", "About 1-2 weeks")."""
+    if not txt:
+        return txt
+    m = re.fullmatch(r"(Early|Mid|Late) (\w+) (\d{4})", txt)
+    if m and m.group(2) in MESES:
+        return f"{PARTE_MES[m.group(1)]} {MESES[m.group(2)]} {m.group(3)}"
+    t = txt.replace("About ", "").replace("weeks", "semanas").replace("week", "semana")
+    t = t.replace("months", "meses").replace("month", "mes").replace("days", "días").replace("day", "día")
+    if txt.lower() == "day to day":
+        return "día a día"
+    if txt.lower() in ("unknown", "doubtful"):
+        return "sin fecha" if txt.lower() == "unknown" else "en duda"
+    return ("aprox. " if txt.startswith("About") else "") + t
+
+
 TIPOS_BAJA = {"injury": "Lesionado", "red_card": "Suspendido (roja)", "yellow_card": "Suspendido (amarillas)",
               "suspension": "Suspendido", "international_duty": "Selección", "doubtful": "Duda"}
 
 
-def riesgo_amarillas(partidos, equipo_id, torneo, limite):
+def riesgo_amarillas(partidos, equipo_id, filtro, limite):
     """Jugadores con amarillas acumuladas cerca del limite en el torneo actual (estimado)."""
-    del_torneo = sorted([p for p in partidos if p["jugadores"] and p.get("torneo") == torneo
+    del_torneo = sorted([p for p in partidos if p["jugadores"] and filtro(p)
                          and equipo_id in (p["local"]["id"], p["visita"]["id"])], key=lambda p: p["fecha"])
     cuenta, ultimo = {}, {}
     for p in del_torneo:
@@ -282,6 +331,7 @@ def forma(partidos_todos, equipo_id, antes_de, n=5):
         st = p.get("stats")
         lado = "h" if es_local else "a"
         salida.append({"fecha": p["fecha"], "rival": rival["nombre"], "logo": rival.get("logo"),
+                       "liga": p.get("liga_nombre"),
                        "condicion": "L" if es_local else "V", "gf": gf, "gc": gc, "res": res,
                        "tarjetas": st[lado]["tarjetas"] if st else None,
                        "corners": st[lado]["corners"] if st else None,
@@ -303,19 +353,34 @@ def procesar(comp, ahora):
     hoy = ahora.astimezone(HORA_ARG).date()
     print(f"\n== {comp['nombre']} ==")
     eventos = calendario(comp, hoy)
-    jugados = jugados_con_detalle(comp, eventos)
-    con_stats = [p for p in jugados if p["stats"]]
-    print(f"  {len(jugados)} jugados ({len(con_stats)} con estadísticas)")
-
     desde = datetime.combine(hoy, datetime.min.time(), HORA_ARG)
     hasta = desde + timedelta(days=DIAS_ADELANTE + 1)
     proximos = [e for e in eventos if e["estado"] != "post" and desde <= fecha_utc(e["fecha"]) < hasta]
     print(f"  {len(proximos)} partidos entre hoy y {DIAS_ADELANTE} días")
+
+    if comp.get("historial") == "equipos":
+        # copas: pocos partidos por equipo en la copa, se usan sus ultimos partidos en todas las competiciones
+        equipos = {e[k]["id"] for e in proximos for k in ("local", "visita")}
+        todos = {e["id"]: e for e in eventos if e["estado"] == "post"}
+        with ThreadPoolExecutor(4) as pool:
+            for lista in pool.map(historial_equipo, equipos):
+                todos.update({e["id"]: e for e in lista})
+        jugados = jugados_con_detalle(comp, sorted(todos.values(), key=lambda e: e["fecha"]), CACHE / "global")
+    else:
+        jugados = jugados_con_detalle(comp, eventos, CACHE / comp["id"] / "partidos")
+    con_stats = [p for p in jugados if p["stats"]]
+    print(f"  {len(jugados)} jugados ({len(con_stats)} con estadísticas)")
     fm = fotmob_partidos(comp, hoy, hoy + timedelta(days=DIAS_ADELANTE)) if proximos else []
 
-    torneo = proximos[0]["torneo"] if proximos else None
-    liga_tarjetas = (sum(p["stats"]["h"]["tarjetas"] + p["stats"]["a"]["tarjetas"] for p in con_stats) / len(con_stats)
-                     if con_stats else None)
+    de_la_comp = [p for p in con_stats if p.get("liga", comp["espn"]) == comp["espn"]]
+    if comp.get("historial") == "equipos":
+        temporada = proximos[0]["temporada"] if proximos else None
+        filtro_amarillas = lambda p: p.get("liga") == comp["espn"] and p.get("temporada") == temporada
+    else:
+        torneo = proximos[0]["torneo"] if proximos else None
+        filtro_amarillas = lambda p: p.get("torneo") == torneo
+    liga_tarjetas = (sum(p["stats"]["h"]["tarjetas"] + p["stats"]["a"]["tarjetas"] for p in de_la_comp) / len(de_la_comp)
+                     if de_la_comp else None)
     liga_jugador = calculos.promedios_liga_jugador(jugados)
     resumen = []
     for ev in proximos:
@@ -334,9 +399,9 @@ def procesar(comp, ahora):
 
         bajas = {}
         for k, eid in (("local", hid), ("visita", aid)):
-            riesgo, susp = riesgo_amarillas(jugados, eid, torneo, comp["amarillas_suspension"])
+            riesgo, susp = riesgo_amarillas(jugados, eid, filtro_amarillas, comp["amarillas_suspension"])
             fotmob_bajas = [{"nombre": b["nombre"], "tipo": TIPOS_BAJA.get(b["tipo"], b["tipo"] or "Baja"),
-                             "vuelve": b.get("vuelve")} for b in (extra.get(k) or {}).get("bajas", [])]
+                             "vuelve": traducir_vuelta(b.get("vuelve"))} for b in (extra.get(k) or {}).get("bajas", [])]
             ya = {normalizar(b["nombre"] or "") for b in fotmob_bajas}
             fotmob_bajas += [s for s in susp if normalizar(s["nombre"]) not in ya]
             bajas[k] = {"bajas": fotmob_bajas, "riesgo": riesgo}
@@ -351,6 +416,8 @@ def procesar(comp, ahora):
             "estadio": extra.get("estadio") or ev["estadio"],
             "arbitro": arbitro, "promedio_tarjetas_liga": round(liga_tarjetas, 2) if liga_tarjetas else None,
             "analisis": analisis,
+            "base_datos": ("últimos 15 partidos de cada equipo, todas las competiciones"
+                           if comp.get("historial") == "equipos" else "temporada en la liga"),
             "jugadores": {"local": jl[:18], "visita": jv[:18]},
             "bajas": bajas,
             "historial": {
@@ -427,7 +494,7 @@ def revisar_alineaciones(ahora):
         for k in ("local", "visita"):
             propias = [b for b in d["bajas"][k]["bajas"] if b["tipo"].startswith("Posible")]
             nuevas = [{"nombre": b["nombre"], "tipo": TIPOS_BAJA.get(b["tipo"], b["tipo"] or "Baja"),
-                       "vuelve": b.get("vuelve")} for b in (extra.get(k) or {}).get("bajas", [])]
+                       "vuelve": traducir_vuelta(b.get("vuelve"))} for b in (extra.get(k) or {}).get("bajas", [])]
             ya = {normalizar(b["nombre"] or "") for b in nuevas}
             d["bajas"][k]["bajas"] = nuevas + [b for b in propias if normalizar(b["nombre"]) not in ya]
         if extra.get("arbitro"):

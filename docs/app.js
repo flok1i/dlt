@@ -193,7 +193,7 @@ function tabMetrica(d, metrica) {
   const pr = t.promedios;
   html += `<section class="seccion"><h3>${nombre} esperadas <small>${dec(t.esperado.total, 2)} en total</small></h3>
     <table class="tabla">
-      <tr><th>Promedio temporada</th><th class="n">Hace</th><th class="n">Recibe</th><th class="n">PJ</th></tr>
+      <tr><th>Promedio (${esc(d.base_datos || "temporada")})</th><th class="n">Hace</th><th class="n">Recibe</th><th class="n">PJ</th></tr>
       <tr><td>${esc(d.local.nombre)} (local)</td><td class="n">${dec(pr.local.favor, 2)}</td><td class="n">${dec(pr.local.contra, 2)}</td><td class="n">${pr.local.n}</td></tr>
       <tr><td>${esc(d.visita.nombre)} (visitante)</td><td class="n">${dec(pr.visita.favor, 2)}</td><td class="n">${dec(pr.visita.contra, 2)}</td><td class="n">${pr.visita.n}</td></tr>
       <tr><td><b>Esperado este partido</b></td><td class="n">${dec(t.esperado.local, 2)}</td><td class="n">${dec(t.esperado.visita, 2)}</td><td></td></tr>
@@ -214,7 +214,7 @@ function tabJugadores(d) {
     <button data-lado="local" class="${lado === "local" ? "activo" : ""}">${escudo(d.local.logo, "escudo")}${esc(d.local.nombre)}</button>
     <button data-lado="visita" class="${lado === "visita" ? "activo" : ""}">${escudo(d.visita.logo, "escudo")}${esc(d.visita.nombre)}</button>
   </div>`;
-  html += `<p class="nota" style="padding:10px 16px">Promedios de los últimos 10 partidos de ${esc(eq.nombre)}. ${d.alineacion_confirmada ? "Arriba, los titulares confirmados." : "Arriba, el once probable (último once titular)."}</p>`;
+  html += `<p class="nota" style="padding:10px 16px">Promedios de los últimos 10 partidos de ${esc(eq.nombre)}${d.base_datos && d.base_datos.includes("todas") ? " (todas las competiciones)" : ""}. ${d.alineacion_confirmada ? "Arriba, los titulares confirmados." : "Arriba, el once probable (último once titular)."}</p>`;
   if (!lista.length) return html + `<p class="vacio">Sin datos de jugadores.</p>`;
   for (const j of lista) {
     const tags = [
@@ -261,7 +261,7 @@ function filaForma(f) {
   const res = f.res ? `<span class="res ${f.res}">${f.res}</span>` : '<span class="res x">?</span>';
   const extra = f.faltan_datos ? '<span class="tag amarillo">faltan datos</span>'
     : `<small><i class="tarjeta-ico"></i> ${dec(f.tarjetas, 0)} · córners ${dec(f.corners, 0)}</small>`;
-  return `<div><span style="display:flex;gap:10px;align-items:center">${res}<span>${f.condicion === "L" ? "vs" : "en"} ${esc(f.rival)} <small>${f.gf ?? "–"}-${f.gc ?? "–"} · ${fechaCorta(f.fecha)}</small></span></span>${extra}</div>`;
+  return `<div><span style="display:flex;gap:10px;align-items:center">${res}<span>${f.condicion === "L" ? "vs" : "en"} ${esc(f.rival)} <small>${f.gf ?? "–"}-${f.gc ?? "–"} · ${fechaCorta(f.fecha)}${f.liga ? ` · ${esc(f.liga)}` : ""}</small></span></span>${extra}</div>`;
 }
 
 function tabHistorial(d) {

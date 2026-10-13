@@ -36,6 +36,12 @@ def espn_partido(liga, evento_id):
     return bajar(f"{ESPN}/{liga}/summary?event={evento_id}", "espn")
 
 
+def espn_equipo(equipo_id, temporada=None):
+    """Partidos de un equipo en TODAS sus competiciones (liga local, copas, amistosos)."""
+    extra = f"?season={temporada}" if temporada else ""
+    return bajar(f"{ESPN}/all/teams/{equipo_id}/schedule{extra}", "espn")
+
+
 def fotmob_dia(fecha):
     return bajar(f"{FOTMOB}/matches?date={fecha:%Y%m%d}", "fotmob")
 
