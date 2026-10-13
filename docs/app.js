@@ -41,6 +41,24 @@ async function cargar(url) {
   return r.json();
 }
 
+// ---------------------------------------------------------------- estado de las fuentes
+
+function avisoFuentes(idx) {
+  const caidas = Object.entries(idx.fuentes || {}).filter(([, f]) => f && f.ok === false).map(([n]) => n);
+  const horas = idx.actualizado ? (Date.now() - new Date(idx.actualizado)) / 36e5 : Infinity;
+  if (caidas.length) {
+    return `<div class="aviso">⚠ ${esc(caidas.join(" y "))} no ${caidas.length > 1 ? "respondieron" : "respondió"} en la última actualización. ${idx.actualizado ? `Se muestran los datos de ${hace(idx.actualizado)}.` : "Todavía no hay datos."}</div>`;
+  }
+  if (horas > 12) return `<div class="aviso">⚠ Los datos no se actualizan desde ${idx.actualizado ? hace(idx.actualizado) : "hace mucho"}. Puede haber cambios que todavía no se ven.</div>`;
+  return "";
+}
+
+const lineaActualizado = (idx) => (idx.actualizado ? `<p class="actualizado">Actualizado ${hace(idx.actualizado)}</p>` : "");
+
+function errorCarga(volver) {
+  return `${volver ? `<a class="volver" href="${volver}">‹ Volver</a>` : ""}<div class="aviso" style="margin-top:16px">⚠ No se pudieron cargar los datos. Puede ser un problema de conexión o que la fuente no esté respondiendo. Probá de nuevo en un rato.</div>`;
+}
+
 // ---------------------------------------------------------------- cuotas (se guardan en este celular)
 
 const claveCuotas = (pid) => `dlt:cuotas:${pid}`;
@@ -109,11 +127,12 @@ function vistaInicio() {
   const nombreComp = Object.fromEntries(comps.map((c) => [c.id, c.nombre]));
   const lista = idx.partidos.filter((p) => filtro === "todas" || p.competicion === filtro);
 
-  let html = `<nav class="chips">
+  let html = avisoFuentes(idx) + `<nav class="chips">
     <button class="chip ${filtro === "todas" ? "activo" : ""}" data-filtro="todas">Todas</button>
     ${comps.map((c) => `<button class="chip ${filtro === c.id ? "activo" : ""}" data-filtro="${c.id}">${esc(c.nombre)}</button>`).join("")}
   </nav>`;
 
+  html += lineaActualizado(idx);
   if (!lista.length) {
     html += `<p class="vacio">No hay partidos hoy ni en los próximos dos días${filtro !== "todas" ? " para esta competición" : ""}.</p>`;
   }
@@ -292,7 +311,7 @@ async function vistaPartido(id, tab) {
   if (!d) {
     app.innerHTML = '<p class="cargando">Cargando partido…</p>';
     try { d = estado.partidos[id] = await cargar(`data/partido/${id}.json`); }
-    catch (e) { app.innerHTML = '<a class="volver" href="#/">‹ Partidos</a><p class="vacio">Este partido ya no está disponible.</p>'; return; }
+    catch (e) { app.innerHTML = errorCarga("#/"); return; }
   }
   tab = TABS.some(([k]) => k === tab) ? tab : "tarjetas";
   const cuerpo = tab === "jugadores" ? tabJugadores(d) : tab === "bajas" ? tabBajas(d) : tab === "historial" ? tabHistorial(d) : tabMetrica(d, tab);
@@ -305,21 +324,3 @@ async function vistaPartido(id, tab) {
     vistaPartido(id, "jugadores");
   }));
 }
-
-// ---------------------------------------------------------------- arranque
-
-async function router() {
-  const [, ruta, id, tab] = location.hash.split("/");
-  if (!estado.indice) {
-    try { estado.indice = await cargar("data/proximos.json"); }
-    catch (e) { app.innerHTML = '<p class="vacio">No se pudieron cargar los datos. Probá de nuevo en un rato.</p>'; return; }
-    document.getElementById("actualizado").textContent = `Actualizado ${hace(estado.indice.actualizado)}`;
-  }
-  const scroll = ruta === "p" && tab;
-  if (ruta === "p" && id) await vistaPartido(id, tab);
-  else { delete app.dataset.pid; vistaInicio(); }
-  if (!scroll) window.scrollTo(0, 0);
-}
-
-window.addEventListener("hashchange", router);
-router();

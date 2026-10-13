@@ -35,8 +35,10 @@ jobs:
         run: |
           if [ "${{ github.event.schedule }}" = "7,22,37,52 * * * *" ] || [ "${{ inputs.modo }}" = "alineaciones" ]; then
             python scripts/actualizar.py --alineaciones
+            python scripts/nba.py --bajas
           else
             python scripts/actualizar.py
+            python scripts/nba.py
           fi
       - name: Avisos de Telegram
         run: python scripts/avisos.py

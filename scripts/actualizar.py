@@ -527,6 +527,7 @@ def main():
     partidos.sort(key=lambda p: p["fecha"])
     guardar(SALIDA / "proximos.json", {
         "actualizado": ahora.isoformat(timespec="seconds"),
+        "fuentes": fuentes.estado(),
         "competiciones": [{"id": c["id"], "nombre": c["nombre"], "corto": c["corto"]}
                           for c in COMPETICIONES if c["activa"]],
         "partidos": partidos,

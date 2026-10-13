@@ -10,6 +10,13 @@ ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 FOTMOB = "https://www.fotmob.com/api/data"
 
 contador = {"espn": 0, "fotmob": 0}
+errores = {"espn": 0, "fotmob": 0}
+
+
+def estado():
+    """Para la pagina: una fuente esta caida si fallo y no respondio ninguna vez."""
+    nombres = {"espn": "ESPN", "fotmob": "FotMob"}
+    return {nombres[f]: {"ok": not (errores[f] and not contador[f])} for f in contador if contador[f] or errores[f]}
 
 
 def bajar(url, fuente, intentos=3):
@@ -21,8 +28,10 @@ def bajar(url, fuente, intentos=3):
                 return json.load(r)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             if isinstance(e, urllib.error.HTTPError) and e.code in (400, 403, 404):
+                errores[fuente] += 1
                 raise
             if i == intentos - 1:
+                errores[fuente] += 1
                 raise
             time.sleep(2 * (i + 1))
 

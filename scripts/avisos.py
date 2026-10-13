@@ -116,8 +116,55 @@ def main():
             if enviar("\n".join(partes)):
                 enviados.add(c)
 
+    avisos_nba(enviados, vistos, ahora)
+
     if TOKEN and CHAT:  # en una prueba sin Telegram no se marca nada como enviado
         guardar(ESTADO, {"enviados": sorted(enviados), "partidos": sorted(vistos)})
+
+
+ICONO_NBA = {"Descartado": "❌", "Dudoso": "⚠️", "Descansa": "💤"}
+FRASE_NBA = {"Descartado": "descartado", "Dudoso": "pasa a dudoso", "Descansa": "descansa, no juega"}
+
+
+def avisos_nba(enviados, vistos, ahora):
+    """NBA: resumen del parte de lesiones el dia del partido y despues cada cambio (descartado / dudoso)."""
+    for archivo in sorted((SALIDA / "nba" / "partido").glob("*.json")):
+        d = leer(archivo)
+        if not d or fecha_utc(d["fecha"]) < ahora - timedelta(hours=1):
+            continue
+        pid = f"nba-{d['id']}"
+        loc, vis = d["local"]["nombre"], d["visita"]["nombre"]
+        inicio = fecha_utc(d["fecha"])
+        link = f'<a href="{PAGINA}#/nba/p/{d["id"]}">Ver en DLT</a>'
+        titulo = f"🏀 <b>{e(vis)} @ {e(loc)}</b> · {cuando(d['fecha'])}"
+        bajas = [(k, b) for k in ("visita", "local") for b in d["bajas"][k]]
+        clave = lambda b: f"nbabaja|{pid}|{b['id'] or normalizar(b['nombre'] or '')}|{b['estado']}"
+        if pid not in vistos:
+            if inicio > ahora + timedelta(hours=24):
+                continue
+            if bajas and inicio > ahora:
+                lineas = [f"{titulo}\n<b>Parte de lesiones</b>"]
+                for k, eq in (("visita", vis), ("local", loc)):
+                    if d["bajas"][k]:
+                        lineas.append(f"\n<b>{e(eq)}</b>")
+                        lineas += [f"{ICONO_NBA.get(b['estado'], '•')} {e(b['nombre'])} — {e(b['estado'].lower())}"
+                                   + (f" ({e(b['motivo'])})" if b.get("motivo") else "") for b in d["bajas"][k]]
+                lineas.append(f"\n{link}")
+                if not enviar("\n".join(lineas)):
+                    continue
+            enviados.update(clave(b) for _, b in bajas)
+            vistos.add(pid)
+            continue
+        for k, b in bajas:
+            c = clave(b)
+            if c in enviados:
+                continue
+            equipo, rival = (loc, vis) if k == "local" else (vis, loc)
+            texto = (f"{ICONO_NBA.get(b['estado'], '•')} <b>{e(b['nombre'])}</b> ({e(equipo)}) "
+                     f"{FRASE_NBA.get(b['estado'], b['estado'].lower())} contra {e(rival)}"
+                     + (f" — {e(b['motivo'])}" if b.get("motivo") else "") + f".\n{titulo}\n{link}")
+            if enviar(texto):
+                enviados.add(c)
 
 
 if __name__ == "__main__":

@@ -39,9 +39,20 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .logo { display: block; line-height: 0; }
 .logo svg { height: 44px; width: auto; display: block; }
 
-.actualizado { color: var(--sec); font-size: 12px; text-align: right; }
+.actualizado { color: var(--sec); font-size: 12px; padding: 0 16px 2px; text-align: right; }
+.deportes { display: flex; background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 3px; gap: 2px; }
+.deportes a {
+  padding: 6px 11px; border-radius: 7px; color: var(--sec);
+  font-family: "Barlow Condensed", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: .3px;
+}
+.deportes a.activo { background: var(--acento); color: #06142A; }
+.sec { color: var(--sec); font-weight: 500; font-size: 13px; }
+.ingles { font-style: italic; }
+.tabla.compacta th, .tabla.compacta td { padding: 6px 6px; font-size: 13px; }
+.tabla.compacta td.n, .tabla.compacta th.n { font-size: 15px; }
+.tabla.compacta td:first-child, .tabla.compacta th:first-child { padding-left: 14px; color: var(--sec); }
 
-main { max-width: 760px; margin: 0 auto; padding: 0 0 40px; }
+main { max-width: 760px; margin: 0 auto; padding: 4px 0 40px; }
 .cargando, .vacio { color: var(--sec); text-align: center; padding: 48px 16px; }
 
 /* ---------- filtro de competiciones */
