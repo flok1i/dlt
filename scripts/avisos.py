@@ -117,6 +117,7 @@ def main():
                 enviados.add(c)
 
     avisos_nba(enviados, vistos, ahora)
+    avisos_f1(enviados, ahora)
 
     if TOKEN and CHAT:  # en una prueba sin Telegram no se marca nada como enviado
         guardar(ESTADO, {"enviados": sorted(enviados), "partidos": sorted(vistos)})
@@ -165,6 +166,30 @@ def avisos_nba(enviados, vistos, ahora):
                      + (f" — {e(b['motivo'])}" if b.get("motivo") else "") + f".\n{titulo}\n{link}")
             if enviar(texto):
                 enviados.add(c)
+
+
+AVISAR_F1 = {"grilla": "⬇️ pierde puestos en la grilla", "penalización": "⚠️ recibe una penalización",
+             "descalificado": "⛔ es descalificado"}
+
+
+def avisos_f1(enviados, ahora):
+    """F1: cada sancion de los comisarios (penalizacion, grilla, descalificacion), una sola vez."""
+    d = leer(SALIDA / "f1" / "gp.json")
+    if not d:
+        return
+    for s in reversed(d.get("sanciones", [])):  # de la mas vieja a la mas nueva
+        c = f"f1|{s['id']}"
+        if s["tipo"] not in AVISAR_F1 or c in enviados:
+            continue
+        if s.get("fecha") and fecha_utc(s["fecha"]) < ahora - timedelta(days=3):
+            enviados.add(c)  # sanciones viejas: se marcan sin avisar
+            continue
+        quien = f"<b>{e(s['piloto'])}</b>" if s.get("piloto") else "Un piloto"
+        texto = (f"🏎️ {quien} {AVISAR_F1[s['tipo']]}\n<i>{e(s['texto'])}</i>\n"
+                 f"{e(s.get('gp') or '')} · {e(s['sesion'])}\n"
+                 f'<a href="{PAGINA}#/f1/gp/sanciones">Ver en DLT</a>')
+        if enviar(texto):
+            enviados.add(c)
 
 
 if __name__ == "__main__":

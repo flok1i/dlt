@@ -198,6 +198,17 @@ summary::-webkit-details-marker { display: none; }
 summary::before { content: "▸ "; }
 details[open] summary::before { content: "▾ "; }
 
+.gp-nombre { font-family: "Barlow Condensed", sans-serif; font-weight: 700; font-size: 24px; line-height: 1.1; }
+.boton { display: block; text-align: center; padding: 12px; border-radius: 10px; background: var(--acento); color: #06142A; font-weight: 700; }
+.grilla-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--borde); }
+.grilla-stats > div { background: var(--panel); padding: 8px 10px; display: flex; flex-direction: column; }
+.grilla-stats small { color: var(--sec); font-size: 11px; }
+.grilla-stats b { font: 700 19px "Barlow Condensed", sans-serif; }
+.ultimas { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 0 14px 12px; }
+.ultimas small { color: var(--sec); margin-right: 4px; }
+.txt-verde { color: var(--verde); }
+.txt-rojo { color: var(--rojo); }
+
 @media (min-width: 640px) {
   .partido, .cabecera, .seccion, .aviso { margin-left: 16px; margin-right: 16px; }
 }
