@@ -36,12 +36,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--borde);
 }
-.logo {
-  font-family: "Barlow Condensed", sans-serif;
-  font-weight: 800; font-style: italic;
-  font-size: 30px; letter-spacing: 1px; line-height: 1;
-}
-.logo span { color: var(--acento); }
+.logo { display: block; line-height: 0; }
+.logo svg { height: 44px; width: auto; display: block; }
+
 .actualizado { color: var(--sec); font-size: 12px; text-align: right; }
 
 main { max-width: 760px; margin: 0 auto; padding: 0 0 40px; }
@@ -109,7 +106,7 @@ main { max-width: 760px; margin: 0 auto; padding: 0 0 40px; }
 .cab-datos b { color: var(--texto); font-weight: 600; }
 
 .tabs {
-  position: sticky; top: 51px; z-index: 5;
+  position: sticky; top: 65px; z-index: 5;
   display: flex; overflow-x: auto; gap: 4px;
   padding: 10px 12px; background: var(--fondo);
   scrollbar-width: none;

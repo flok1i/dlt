@@ -1,0 +1,16 @@
+{
+  "name": "DLT - Estadísticas para apostar",
+  "short_name": "DLT",
+  "description": "Estadísticas de fútbol para analizar apuestas: tarjetas, córners, faltas, jugadores y bajas.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0B1A33",
+  "theme_color": "#0B1A33",
+  "icons": [
+    { "src": "img/dlt-icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/dlt-icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "img/dlt-icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
