@@ -2,9 +2,9 @@
 // Seccion Formula 1. Usa las utilidades de app.js (esc, dec, hora, mercado, avisoFuentes, etc.)
 
 const f1 = { datos: null, mercado: "gana" };
-const TABS_F1 = [["pilotos", "Pilotos"], ["mercados", "Mercados"], ["circuito", "Circuito"], ["campeonato", "Campeonato"], ["sanciones", "Sanciones"]];
+const TABS_F1 = [["pilotos", "Pilotos"], ["mercados", "Mercados"], ["sanciones", "Sanciones"], ["mejoras", "Mejoras"], ["circuito", "Circuito"], ["campeonato", "Campeonato"]];
 const MERCADOS_F1 = [["gana", "Ganador"], ["podio", "Podio"], ["puntos", "Puntos (top 10)"], ["abandona", "Abandona"], ["duelo", "Le gana al compañero"]];
-const TIPO_SANCION = { grilla: "rojo", penalización: "rojo", descalificado: "rojo", reprimenda: "amarillo", investigación: "", "sin sanción": "" };
+const TIPO_SANCION = { grilla: "rojo", penalización: "rojo", descalificado: "rojo", reprimenda: "amarillo", advertencia: "amarillo", multa: "amarillo", investigación: "", "sin sanción": "" };
 
 const fechaLarga = (iso) => new Date(iso).toLocaleDateString("es-AR", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
 const posTxt = (r) => (!r ? "–" : r.pos ? `P${r.pos}` : "DNF");
@@ -125,10 +125,43 @@ function f1Campeonato(d) {
 }
 
 function f1Sanciones(d) {
-  const lista = d.sanciones || [];
-  let html = `<p class="nota" style="padding:10px 16px">Mensajes de los comisarios de la FIA de este fin de semana y de la última carrera (ahí se anuncian penalizaciones de grilla para la siguiente). OpenF1 los publica cuando termina cada sesión.</p>`;
-  if (!lista.length) return html + '<p class="vacio">Sin sanciones ni investigaciones por ahora.</p>';
-  html += `<section class="seccion"><div class="lista">${lista.map((s) => `<div style="align-items:flex-start"><span>${s.piloto ? `<b>${esc(s.piloto)}</b><br>` : ""}<small class="ingles">${esc(s.texto)}</small><br><small>${esc(s.gp || "")} · ${esc(s.sesion)}${s.fecha ? ` · ${fechaLarga(s.fecha)} ${hora(s.fecha)}` : ""}</small></span><span class="tag ${TIPO_SANCION[s.tipo] ?? ""}">${esc(s.tipo)}</span></div>`).join("")}</div></section>`;
+  const fia = d.fia;
+  const conSancion = (fia?.sanciones || []).filter((s) => s.tipo !== "sin sanción");
+  const sinSancion = (fia?.sanciones || []).filter((s) => s.tipo === "sin sanción");
+  let html = "";
+  if (fia) {
+    html += `<p class="nota" style="padding:10px 16px">Decisiones de los comisarios publicadas por la FIA para el <b>${esc(fia.evento || "último Gran Premio")}</b>. Las marcadas "afecta a este GP" se cumplen en la próxima carrera.</p>`;
+    html += `<section class="seccion"><h3>Sanciones <small>${conSancion.length}</small></h3><div class="lista">${conSancion.length ? conSancion.map((s) => `
+      <div style="align-items:flex-start"><span><b>${esc(s.piloto || "–")}</b> ${s.proxima_carrera ? '<span class="tag rojo">afecta a este GP</span>' : ""}<br>${esc(s.decision_es || s.decision || "")}<br>
+        <small>${esc(s.sesion || "")}${s.hecho ? ` · <span class="ingles">${esc(s.hecho.slice(0, 140))}</span>` : ""}</small><br>
+        <small><a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--acento)">Documento FIA ›</a></small></span>
+        <span class="tag ${TIPO_SANCION[s.tipo] ?? ""}">${esc(s.tipo)}</span></div>`).join("") : "<div><small>Sin sanciones</small></div>"}</div>
+      ${sinSancion.length ? `<details><summary>Investigados sin sanción (${sinSancion.length})</summary><div class="lista">${sinSancion.map((s) => `<div><span>${esc(s.piloto || "–")} <small>· ${esc(s.sesion || "")}</small></span><small>${esc(s.titulo.replace(/^Doc \d+ - /, ""))}</small></div>`).join("")}</div></details>` : ""}
+    </section>`;
+  } else {
+    html += '<div class="aviso">No se pudieron leer los documentos de la FIA. Se muestran solo los mensajes de carrera de OpenF1.</div>';
+  }
+  const msgs = d.sanciones || [];
+  html += `<section class="seccion"><h3>Mensajes de carrera <small>OpenF1</small></h3>
+    <p class="nota">Lo que anuncian los comisarios por radio durante las sesiones (se publica al terminar cada sesión).</p>
+    <div class="lista">${msgs.length ? msgs.map((s) => `<div style="align-items:flex-start"><span>${s.piloto ? `<b>${esc(s.piloto)}</b><br>` : ""}<small class="ingles">${esc(s.texto)}</small><br><small>${esc(s.gp || "")} · ${esc(s.sesion)}${s.fecha ? ` · ${fechaLarga(s.fecha)} ${hora(s.fecha)}` : ""}</small></span><span class="tag ${TIPO_SANCION[s.tipo] ?? ""}">${esc(s.tipo)}</span></div>`).join("") : "<div><small>Sin mensajes por ahora</small></div>"}</div>
+  </section>`;
+  return html;
+}
+
+function f1Mejoras(d) {
+  const m = d.fia?.mejoras;
+  if (!m) return '<p class="vacio">La FIA todavía no publicó las mejoras de este Gran Premio. Suelen salir el jueves.</p>';
+  const con = m.equipos.filter((e) => e.mejoras.length);
+  const sin = m.equipos.filter((e) => !e.mejoras.length && e.leido);
+  const noLeidos = m.equipos.filter((e) => !e.leido);
+  let html = `<p class="nota" style="padding:10px 16px">Piezas nuevas que declaró cada equipo para el <b>${esc(d.fia.evento || "Gran Premio")}</b> (documento de la FIA del ${esc(m.publicado)}). Lectura automática del PDF: ante la duda, revisá el <a href="${esc(m.url)}" target="_blank" rel="noopener" style="color:var(--acento)">documento original</a>.</p>`;
+  for (const e of con) {
+    html += `<section class="seccion"><h3>${esc(e.equipo)} <small>${e.mejoras.length} ${e.mejoras.length === 1 ? "mejora" : "mejoras"}</small></h3>
+      <div class="lista">${e.mejoras.map((x) => `<div style="align-items:flex-start"><span><b>${esc(x.componente)}</b><br><small>${esc(x.motivo)}</small><br><small class="ingles">${esc(x.detalle)}</small></span></div>`).join("")}</div></section>`;
+  }
+  if (noLeidos.length) html += `<div class="aviso">No se pudo leer el detalle de: ${esc(noLeidos.map((e) => e.equipo).join(", "))}. Miralo en el documento original.</div>`;
+  if (sin.length) html += `<section class="seccion"><h3>Sin mejoras</h3><p class="nota">${esc(sin.map((e) => e.equipo).join(" · "))}</p></section>`;
   return html;
 }
 
@@ -136,8 +169,9 @@ function f1Gp(tab) {
   const d = f1.datos;
   app.dataset.pid = `f1-${d.temporada}-${d.ronda}`;
   tab = TABS_F1.some(([k]) => k === tab) ? tab : "pilotos";
-  const cuerpo = tab === "mercados" ? f1Mercados(d) : tab === "circuito" ? f1Circuito(d) : tab === "campeonato" ? f1Campeonato(d) : tab === "sanciones" ? f1Sanciones(d) : f1Pilotos(d);
-  const nSanc = (d.sanciones || []).filter((s) => ["grilla", "penalización", "descalificado"].includes(s.tipo)).length;
+  const cuerpo = tab === "mercados" ? f1Mercados(d) : tab === "circuito" ? f1Circuito(d) : tab === "campeonato" ? f1Campeonato(d)
+    : tab === "sanciones" ? f1Sanciones(d) : tab === "mejoras" ? f1Mejoras(d) : f1Pilotos(d);
+  const nSanc = (d.fia?.sanciones || []).filter((s) => s.proxima_carrera).length;
   app.innerHTML = f1Cabecera(d)
     + `<nav class="tabs">${TABS_F1.map(([k, n]) => `<a class="tab ${k === tab ? "activo" : ""}" href="#/f1/gp/${k}">${n}${k === "sanciones" && nSanc ? ` (${nSanc})` : ""}</a>`).join("")}</nav>`
     + cuerpo;

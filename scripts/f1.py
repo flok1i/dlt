@@ -252,6 +252,157 @@ def sesiones_relevantes(todas, proximo_inicio, ahora):
     return sorted(vistas.values(), key=lambda s: s["date_start"])
 
 
+# ---------------------------------------------------------------- documentos de la FIA
+
+FIA = "https://www.fia.com"
+FIA_LISTA = f"{FIA}/documents/championships/fia-formula-one-world-championship-14"
+MOTIVOS = {"performance - local load": "Rendimiento: más carga en la zona",
+           "performance - flow conditioning": "Rendimiento: mejor flujo de aire",
+           "performance - drag reduction": "Rendimiento: menos resistencia",
+           "circuit specific - cooling range": "Para este circuito: refrigeración",
+           "circuit specific - balance range": "Para este circuito: balance aerodinámico",
+           "reliability": "Fiabilidad"}
+RE_MEJORA = re.compile(r"(?:^|\s)(\d{1,2})\s+([A-Z][A-Za-z /&-]{2,40}?)\s+"
+                       r"(Performance\s*-\s*(?:Local Load|Flow Conditioning|Drag Reduction)|"
+                       r"Circuit specific\s*-\s*(?:Cooling Range|Balance Range)|Reliability)", re.I)
+
+
+def texto_web(url):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": fuentes.UA})
+    try:
+        with urllib.request.urlopen(req, timeout=40) as r:
+            datos = r.read()
+        estado_fuentes.setdefault("FIA", {"ok": True})
+        return datos
+    except Exception as err:
+        estado_fuentes["FIA"] = {"ok": False, "error": str(err)[:120]}
+        raise
+
+
+def texto_pdf(url):
+    """Texto de un PDF de la FIA. Se cachea: un documento publicado no cambia."""
+    archivo = CARPETA / "fia" / f"{hashlib.sha1(url.encode()).hexdigest()[:16]}.json"
+    if (guardado := leer(archivo)) is not None:
+        return guardado["texto"]
+    import io
+    import pypdf
+    lector = pypdf.PdfReader(io.BytesIO(texto_web(url)))
+    texto = "\n".join(p.extract_text() or "" for p in lector.pages)
+    guardar(archivo, {"url": url, "texto": texto})
+    return texto
+
+
+def campo(texto, nombre, hasta):
+    texto = texto.replace(" ", " ")  # los PDF de la FIA usan espacios duros
+    m = re.search(rf"\n{nombre}\s+(.+?)\n(?:{hasta})\s", texto, re.S)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else None
+
+
+def tipo_decision(decision):
+    d = (decision or "").lower()
+    if not d or "no penalty" in d or "no further action" in d or "no action" in d:
+        return "sin sanción"
+    if "disqualif" in d:
+        return "descalificado"
+    if "grid" in d or "pit lane" in d or "back of the" in d:
+        return "grilla"
+    if "drive through" in d or "drive-through" in d or "stop and go" in d or "second time penalty" in d or "time penalty" in d:
+        return "penalización"
+    if "reprimand" in d:
+        return "reprimenda"
+    if "fine" in d or "€" in d:
+        return "multa"
+    if "warning" in d:
+        return "advertencia"
+    return "otra"
+
+
+def traducir_decision(decision):
+    """Traduce las decisiones mas comunes de los comisarios; si no reconoce la frase, la deja en ingles."""
+    if not decision:
+        return None
+    d = decision.strip().rstrip(".")
+    reglas = [
+        (r"required to start the race from the pit lane", "Larga la carrera desde el pit lane"),
+        (r"required to start the sprint from the pit lane", "Larga el sprint desde el pit lane"),
+        (r"drop of (\d+) grid positions? in the next race.*", r"Pierde \1 puestos en la grilla de la próxima carrera"),
+        (r"drop of (\d+) grid positions? .*sprint.*", r"Pierde \1 puestos en la grilla del sprint"),
+        (r"drop of (\d+) grid positions?.*", r"Pierde \1 puestos en la grilla"),
+        (r"(\d+) grid place penalty.*", r"Pierde \1 puestos en la grilla"),
+        (r"(\d+) second time penalty.*", r"Penalización de \1 segundos"),
+        (r"drive[- ]through penalty.*", "Penalización de drive-through"),
+        (r"(\d+) second stop and go penalty.*", r"Stop and go de \1 segundos"),
+        (r"disqualified.*", "Descalificado"),
+        (r"reprimand.*", "Reprimenda"),
+        (r"(?:driver: )?warning.*", "Advertencia"),
+        (r"no (?:penalty|further action).*", "Sin sanción"),
+        (r"start from the back of the grid.*", "Larga desde el fondo de la grilla"),
+    ]
+    for patron, es in reglas:
+        if re.fullmatch(patron, d, re.I):
+            extra = re.search(r"(\d+) penalty points?", decision, re.I)
+            texto = re.sub(patron, es, d, flags=re.I)
+            return texto + (f" y {extra.group(1)} puntos de penalización" if extra and "puntos" not in texto else "")
+    return decision
+
+
+def leer_mejoras(texto):
+    """Car Presentation Submissions: mejoras que declara cada equipo. El formato cambia segun el equipo,
+    asi que se busca cada item por los motivos fijos del formulario de la FIA."""
+    equipos = []
+    for bloque in re.split(r"Car Presentation\s*[–-]\s*", texto)[1:]:
+        lineas = [l.strip() for l in bloque.splitlines() if l.strip()]
+        if len(lineas) < 2:
+            continue
+        equipo = lineas[1]
+        cuerpo = " ".join(lineas[2:])
+        if re.search(r"no updates?\b", cuerpo, re.I) and not RE_MEJORA.search(cuerpo):
+            equipos.append({"equipo": equipo, "mejoras": [], "leido": True})
+            continue
+        items = list(RE_MEJORA.finditer(cuerpo))
+        mejoras = []
+        for i, m in enumerate(items):
+            fin = items[i + 1].start() if i + 1 < len(items) else len(cuerpo)
+            detalle = re.sub(r"\s+", " ", cuerpo[m.end():fin]).strip()
+            motivo = re.sub(r"\s+", " ", m.group(3)).strip()
+            mejoras.append({"componente": m.group(2).strip().title(), "motivo": MOTIVOS.get(motivo.lower(), motivo),
+                            "detalle": detalle[:400]})
+        equipos.append({"equipo": equipo, "mejoras": mejoras, "leido": bool(mejoras)})
+    return equipos
+
+
+def documentos_fia(codigo_por_numero):
+    """Lee la lista de documentos del ultimo Gran Premio en fia.com: decisiones de los comisarios y mejoras."""
+    pagina = texto_web(FIA_LISTA).decode("utf-8", "ignore")
+    evento = re.search(r'<div class="event-title active">\s*([^<]+?)\s*</div>', pagina)
+    filas = re.findall(r'<a href="(/system/files/decision-document/[^"]+\.pdf)".*?<div class="title">\s*(.+?)\s*</div>'
+                       r'.*?date-display-single">([^<]+)<', pagina, re.S)
+    sanciones, mejoras = [], None
+    for href, titulo, publicado in filas:
+        titulo = re.sub(r"\s+", " ", titulo)
+        url = FIA + href
+        try:
+            if re.search(r"Car Presentation Submissions", titulo, re.I):
+                mejoras = {"titulo": titulo, "url": url, "publicado": publicado, "equipos": leer_mejoras(texto_pdf(url))}
+            elif re.search(r"(Infringement|Decision|Offence) - Car \d+", titulo, re.I):
+                texto = texto_pdf(url)
+                decision = campo(texto, "Decision", "Reason|Competitors")
+                piloto = campo(texto, r"No / Driver", "Competitor")
+                numero = re.match(r"(\d+)", piloto or "")
+                sanciones.append({
+                    "id": hashlib.sha1(url.encode()).hexdigest()[:12], "titulo": titulo, "url": url, "publicado": publicado,
+                    "piloto": re.sub(r"^\d+\s*-\s*", "", piloto or "") or None,
+                    "codigo": codigo_por_numero.get(numero.group(1)) if numero else None,
+                    "sesion": campo(texto, "Session", "Fact"), "hecho": campo(texto, "Fact", "Infringement"),
+                    "decision": decision, "decision_es": traducir_decision(decision), "tipo": tipo_decision(decision),
+                    "proxima_carrera": bool(re.search(r"next (race|event|competition)", decision or "", re.I)),
+                })
+        except Exception as err:
+            print(f"  ! FIA {titulo}: {err}")
+    return {"evento": evento.group(1) if evento else None, "url": FIA_LISTA, "sanciones": sanciones, "mejoras": mejoras}
+
+
 # ---------------------------------------------------------------- armado
 
 def completo(ahora):
@@ -276,6 +427,8 @@ def completo(ahora):
     circuito = historial_circuito(prox["Circuit"]["circuitId"], anio)
 
     codigos = {p["codigo"]: p["nombre"] for p in pilotos if p["codigo"]}
+    numeros = {x["number"]: x["Driver"].get("code") for r in carreras for x in r["Results"]}
+    fia = leer_fia(numeros)
     try:
         todas = sesiones_openf1(anio)
         sanciones = sanciones_de(sesiones_relevantes(todas, fecha_utc(sesiones[0]["fecha"]), ahora), codigos)
@@ -314,7 +467,17 @@ def completo(ahora):
                               for c in (constructores[0]["ConstructorStandings"] if constructores else [])],
         },
         "sanciones": sanciones,
+        "numeros": numeros,
+        "fia": fia,
     }
+
+
+def leer_fia(numeros):
+    try:
+        return documentos_fia(numeros)
+    except Exception as err:
+        print(f"  ! FIA: {err}")
+        return (leer(SALIDA / "gp.json", {}) or {}).get("fia")
 
 
 def solo_sanciones(ahora):
@@ -324,12 +487,17 @@ def solo_sanciones(ahora):
         return
     inicio = fecha_utc(datos["gp"]["sesiones"][0]["fecha"])
     fin = fecha_utc(datos["gp"]["sesiones"][-1]["fecha"])
-    if not (inicio - timedelta(hours=2) <= ahora <= fin + timedelta(days=2)):
+    # desde el jueves (ahi la FIA publica las mejoras de cada equipo) hasta 2 dias despues de la carrera
+    if not (inicio - timedelta(hours=36) <= ahora <= fin + timedelta(days=2)):
         print("F1: no es fin de semana de carrera, no se revisan sanciones")
         return
     codigos = {p["codigo"]: p["nombre"] for p in datos["pilotos"] if p["codigo"]}
-    todas = sesiones_openf1(datos["temporada"])
-    datos["sanciones"] = sanciones_de(sesiones_relevantes(todas, inicio, ahora), codigos)
+    datos["fia"] = leer_fia(datos.get("numeros", {}))
+    try:
+        todas = sesiones_openf1(datos["temporada"])
+        datos["sanciones"] = sanciones_de(sesiones_relevantes(todas, inicio, ahora), codigos)
+    except Exception as err:
+        print(f"  ! OpenF1: {err}")
     datos["fuentes"] = {**datos.get("fuentes", {}), **estado_fuentes}
     guardar(SALIDA / "gp.json", datos)
     print(f"F1: {len(datos['sanciones'])} mensajes de comisarios")

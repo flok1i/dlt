@@ -173,9 +173,46 @@ AVISAR_F1 = {"grilla": "⬇️ pierde puestos en la grilla", "penalización": "�
 
 
 def avisos_f1(enviados, ahora):
-    """F1: cada sancion de los comisarios (penalizacion, grilla, descalificacion), una sola vez."""
+    """F1: cada sancion (penalizacion, grilla, descalificacion) una sola vez, y el resumen de mejoras.
+    Si se pudieron leer los documentos de la FIA se usan esos (traen la decision exacta);
+    si no, los mensajes de carrera de OpenF1."""
     d = leer(SALIDA / "f1" / "gp.json")
     if not d:
+        return
+    link = f'<a href="{PAGINA}#/f1/gp/sanciones">Ver en DLT</a>'
+    fia = d.get("fia")
+    if fia and d.get("fuentes", {}).get("FIA", {}).get("ok", True):
+        primera_vez = not any(k.startswith("f1fia|") for k in enviados)
+        for s in reversed(fia.get("sanciones", [])):
+            c = f"f1fia|{s['id']}"
+            if c in enviados:
+                continue
+            # la primera vez solo se avisan las que afectan a la proxima carrera (las demas ya pasaron)
+            if s["tipo"] not in AVISAR_F1 or (primera_vez and not s.get("proxima_carrera")):
+                enviados.add(c)
+                continue
+            quien = f"<b>{e(s['piloto'])}</b>" if s.get("piloto") else "Un piloto"
+            texto = (f"🏎️ {quien} {AVISAR_F1[s['tipo']]}\n{e(s.get('decision_es') or s.get('decision'))}"
+                     + (" — <b>se cumple en este GP</b>" if s.get("proxima_carrera") else "")
+                     + f"\n{e(' · '.join(x for x in (fia.get('evento'), s.get('sesion')) if x))}\n{link}")
+            if enviar(texto):
+                enviados.add(c)
+        m = fia.get("mejoras")
+        c = f"f1mejoras|{fia.get('evento')}|{m and m.get('url')}"
+        if m and c not in enviados:
+            con = [x for x in m["equipos"] if x["mejoras"]]
+            lineas = [f"🔧 <b>Mejoras para el {e(fia.get('evento'))}</b>"]
+            for x in con:
+                lineas.append(f"\n<b>{e(x['equipo'])}</b>")
+                lineas += [f"• {e(y['componente'])} — {e(y['motivo'])}" for y in x["mejoras"]]
+            sin = [x["equipo"] for x in m["equipos"] if not x["mejoras"] and x["leido"]]
+            if sin:
+                lineas.append(f"\nSin mejoras: {e(', '.join(sin))}")
+            lineas.append(f'\n<a href="{PAGINA}#/f1/gp/mejoras">Ver en DLT</a>')
+            if primera_vez or enviar("\n".join(lineas)):  # la primera vez no se reenvia la del GP que ya paso
+                enviados.add(c)
+        for s in d.get("sanciones", []):  # los de OpenF1 quedan cubiertos por la FIA
+            enviados.add(f"f1|{s['id']}")
         return
     for s in reversed(d.get("sanciones", [])):  # de la mas vieja a la mas nueva
         c = f"f1|{s['id']}"
