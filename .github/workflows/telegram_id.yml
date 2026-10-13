@@ -1,0 +1,13 @@
+name: Telegram - buscar ID del canal
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  id:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/telegram_id.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.DLT_FUTBOL_BOT }}
