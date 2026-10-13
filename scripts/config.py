@@ -10,20 +10,27 @@ HORA_ARG = timezone(timedelta(hours=-3))  # Argentina no tiene horario de verano
 DIAS_ADELANTE = 2                         # hoy + 2 dias
 MIN_PARTIDOS = 5                          # menos que esto = "pocos datos"
 
+PAGINA = "https://flok1i.github.io/dlt/"
+
+# Revision de alineaciones: "cada15" = cada 15 min desde `desde` minutos antes;
+# "unica" = una sola consulta cerca de `desde` minutos antes.
+ALINEACIONES_LIGA = {"modo": "cada15", "desde": 90}
+ALINEACIONES_COPA = {"modo": "unica", "desde": 60}
+
 # activa=False: todavia no se baja (se van sumando de a una)
 COMPETICIONES = [
     {"id": "arg", "nombre": "Liga Profesional", "corto": "LPF", "espn": "arg.1", "fotmob": 112,
-     "amarillas_suspension": 5, "activa": True},
+     "amarillas_suspension": 5, "activa": True, "alineaciones": ALINEACIONES_LIGA},
     {"id": "bra", "nombre": "Brasileirão", "corto": "BRA", "espn": "bra.1", "fotmob": 268,
-     "amarillas_suspension": 3, "activa": False},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
     {"id": "ucl", "nombre": "Champions League", "corto": "UCL", "espn": "uefa.champions", "fotmob": 42,
-     "amarillas_suspension": 3, "activa": False},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
     {"id": "uel", "nombre": "Europa League", "corto": "UEL", "espn": "uefa.europa", "fotmob": 73,
-     "amarillas_suspension": 3, "activa": False},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
     {"id": "lib", "nombre": "Copa Libertadores", "corto": "LIB", "espn": "conmebol.libertadores", "fotmob": 45,
-     "amarillas_suspension": 3, "activa": False},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
     {"id": "sud", "nombre": "Copa Sudamericana", "corto": "SUD", "espn": "conmebol.sudamericana", "fotmob": 299,
-     "amarillas_suspension": 3, "activa": False},
+     "amarillas_suspension": 3, "activa": False, "alineaciones": ALINEACIONES_COPA},
 ]
 
 # Lineas de apuesta que se calculan

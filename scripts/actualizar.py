@@ -45,6 +45,16 @@ def parecido(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 
+def mismo_jugador(a, b):
+    """ESPN y FotMob escriben distinto algunos nombres ("Juan Insaurralde" / "Juan Manuel Insaurralde")."""
+    a, b = normalizar(a or "").split(), normalizar(b or "").split()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return a[-1] == b[-1] and a[0][0] == b[0][0]
+
+
 # ---------------------------------------------------------------- ESPN
 
 def equipo_espn(comp):
@@ -333,13 +343,6 @@ def procesar(comp, ahora):
 
         jl = calculos.jugadores_equipo(jugados, hid, liga_jugador)
         jv = calculos.jugadores_equipo(jugados, aid, liga_jugador)
-        for lista, k in ((jl, "local"), (jv, "visita")):
-            tit = {normalizar(n) for n in (extra.get(k) or {}).get("titulares", [])}
-            baja = {normalizar(b["nombre"] or "") for b in bajas[k]["bajas"]}
-            for j in lista:
-                j["en_once"] = normalizar(j["nombre"]) in tit
-                j["baja"] = normalizar(j["nombre"]) in baja
-            lista.sort(key=lambda j: (j["baja"], not j["en_once"], -j["titular"], -j["n"]))
 
         detalle = {
             "id": ev["id"], "competicion": comp["id"], "competicion_nombre": comp["nombre"],
@@ -347,9 +350,6 @@ def procesar(comp, ahora):
             "local": ev["local"], "visita": ev["visita"],
             "estadio": extra.get("estadio") or ev["estadio"],
             "arbitro": arbitro, "promedio_tarjetas_liga": round(liga_tarjetas, 2) if liga_tarjetas else None,
-            "alineacion_confirmada": extra.get("alineacion_confirmada", False),
-            "tipo_alineacion": extra.get("tipo_alineacion"),
-            "formaciones": {k: (extra.get(k) or {}).get("formacion") for k in ("local", "visita")},
             "analisis": analisis,
             "jugadores": {"local": jl[:18], "visita": jv[:18]},
             "bajas": bajas,
@@ -361,23 +361,91 @@ def procesar(comp, ahora):
             },
             "fotmob_id": m["id"] if m else None,
         }
+        aplicar_alineacion(detalle, extra)
         guardar(SALIDA / "partido" / f"{ev['id']}.json", detalle)
-        resumen.append({
-            "id": ev["id"], "competicion": comp["id"], "fecha": ev["fecha"], "estado": ev["estado"],
-            "local": {k: ev["local"][k] for k in ("nombre", "logo")},
-            "visita": {k: ev["visita"][k] for k in ("nombre", "logo")},
-            "estadio": detalle["estadio"],
-            "arbitro": arbitro["nombre"] if arbitro else None,
-            "tarjetas_esperadas": analisis.get("tarjetas_esperadas"),
-            "bajas": len(bajas["local"]["bajas"]) + len(bajas["visita"]["bajas"]),
-            "alineacion_confirmada": detalle["alineacion_confirmada"],
-            "pocos_datos": analisis["pocos_datos"],
-        })
+        resumen.append(resumen_partido(detalle))
     return resumen
+
+
+def aplicar_alineacion(detalle, extra):
+    """Pone en el detalle la alineacion de FotMob y marca titulares y bajas en la lista de jugadores."""
+    detalle["alineacion_confirmada"] = extra.get("alineacion_confirmada", False)
+    detalle["tipo_alineacion"] = extra.get("tipo_alineacion")
+    detalle["formaciones"] = {k: (extra.get(k) or {}).get("formacion") for k in ("local", "visita")}
+    detalle["alineaciones"] = {k: (extra.get(k) or {}).get("titulares", []) for k in ("local", "visita")}
+    for k in ("local", "visita"):
+        tit = detalle["alineaciones"][k]
+        baja = [b["nombre"] or "" for b in detalle["bajas"][k]["bajas"]]
+        for j in detalle["jugadores"][k]:
+            j["en_once"] = any(mismo_jugador(j["nombre"], n) for n in tit)
+            j["baja"] = any(mismo_jugador(j["nombre"], n) for n in baja)
+        detalle["jugadores"][k].sort(key=lambda j: (j["baja"], not j["en_once"], -j["titular"], -j["n"]))
+
+
+def resumen_partido(d):
+    return {
+        "id": d["id"], "competicion": d["competicion"], "fecha": d["fecha"], "estado": d["estado"],
+        "local": {k: d["local"][k] for k in ("nombre", "logo")},
+        "visita": {k: d["visita"][k] for k in ("nombre", "logo")},
+        "estadio": d["estadio"],
+        "arbitro": d["arbitro"]["nombre"] if d["arbitro"] else None,
+        "tarjetas_esperadas": d["analisis"].get("tarjetas_esperadas"),
+        "bajas": len(d["bajas"]["local"]["bajas"]) + len(d["bajas"]["visita"]["bajas"]),
+        "alineacion_confirmada": d["alineacion_confirmada"],
+        "pocos_datos": d["analisis"]["pocos_datos"],
+    }
+
+
+def revisar_alineaciones(ahora):
+    """Modo rapido (cada 15 min): solo vuelve a consultar FotMob para los partidos que estan
+    por empezar y todavia no tienen la alineacion confirmada. No toca nada si no hay ninguno."""
+    indice = leer(SALIDA / "proximos.json")
+    if not indice:
+        return
+    reglas = {c["id"]: c["alineaciones"] for c in COMPETICIONES}
+    cambios = False
+    for p in indice["partidos"]:
+        archivo = SALIDA / "partido" / f"{p['id']}.json"
+        d = leer(archivo)
+        if not d or d.get("alineacion_confirmada") or not d.get("fotmob_id"):
+            continue
+        faltan = (fecha_utc(d["fecha"]) - ahora).total_seconds() / 60
+        regla = reglas.get(d["competicion"], {"modo": "unica", "desde": 60})
+        if regla["modo"] == "cada15":
+            toca = -15 < faltan <= regla["desde"] + 5
+        else:
+            toca = -15 < faltan <= regla["desde"] + 10 and not d.get("alineacion_revisada")
+        if not toca:
+            continue
+        print(f"  revisando alineación {d['local']['nombre']} - {d['visita']['nombre']} (faltan {faltan:.0f} min)")
+        try:
+            extra = detalle_fotmob(d["fotmob_id"])
+        except Exception as err:
+            print(f"  ! FotMob: {err}")
+            continue
+        # actualiza bajas de FotMob (pueden aparecer a ultimo momento) sin perder las calculadas por DLT
+        for k in ("local", "visita"):
+            propias = [b for b in d["bajas"][k]["bajas"] if b["tipo"].startswith("Posible")]
+            nuevas = [{"nombre": b["nombre"], "tipo": TIPOS_BAJA.get(b["tipo"], b["tipo"] or "Baja"),
+                       "vuelve": b.get("vuelve")} for b in (extra.get(k) or {}).get("bajas", [])]
+            ya = {normalizar(b["nombre"] or "") for b in nuevas}
+            d["bajas"][k]["bajas"] = nuevas + [b for b in propias if normalizar(b["nombre"]) not in ya]
+        if extra.get("arbitro"):
+            d["arbitro"] = extra["arbitro"]
+        aplicar_alineacion(d, extra)
+        d["alineacion_revisada"] = True
+        guardar(archivo, d)
+        p.update(resumen_partido(d))
+        cambios = True
+    if cambios:
+        guardar(SALIDA / "proximos.json", indice)
+    print(f"Alineaciones revisadas. Consultas FotMob: {fuentes.contador['fotmob']}")
 
 
 def main():
     ahora = datetime.now(timezone.utc)
+    if "--alineaciones" in sys.argv:
+        return revisar_alineaciones(ahora)
     solo = sys.argv[1:]  # opcional: ids de competicion, ej. "arg"
     activas = [c for c in COMPETICIONES if (c["id"] in solo if solo else c["activa"])]
     previo = leer(SALIDA / "proximos.json", {}) or {}

@@ -2,9 +2,11 @@ name: Actualizar datos
 
 on:
   schedule:
-    # horas en UTC (Argentina = UTC-3): 08, 12, 16, 19 y 22 hs de Argentina
+    # Actualizacion completa. Horas en UTC (Argentina = UTC-3): 08, 12, 16, 19 y 22 hs de Argentina
     - cron: "0 11,15,19,22 * * *"
     - cron: "0 1 * * *"
+    # Alineaciones: cada 15 minutos revisa si hay partidos por empezar (si no hay, no hace nada)
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch: {}   # boton "Run workflow" para correrlo a mano
 
 permissions:
@@ -24,7 +26,17 @@ jobs:
         with:
           python-version: "3.12"
       - name: Bajar datos y calcular
-        run: python scripts/actualizar.py
+        run: |
+          if [ "${{ github.event.schedule }}" = "7,22,37,52 * * * *" ]; then
+            python scripts/actualizar.py --alineaciones
+          else
+            python scripts/actualizar.py
+          fi
+      - name: Avisos de Telegram
+        run: python scripts/avisos.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.DLT_FUTBOL_BOT }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
       - name: Guardar cambios
         run: |
           git config user.name "DLT Bot"
