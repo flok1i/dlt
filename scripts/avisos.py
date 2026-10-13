@@ -76,9 +76,12 @@ def main():
         titulo = f"<b>{e(loc)} vs {e(vis)}</b> · {cuando(d['fecha'])}"
         bajas = [(k, b) for k in ("local", "visita") for b in d["bajas"][k]["bajas"]]
 
+        inicio = fecha_utc(d["fecha"])
         if pid not in vistos:
-            # primera vez que aparece el partido: un solo mensaje con todas sus bajas
-            if bajas:
+            if inicio > ahora + timedelta(hours=24):
+                continue  # el resumen se manda recien el dia anterior, asi no llegan todos juntos
+            # primera vez que se avisa del partido: un solo mensaje con todas sus bajas
+            if bajas and inicio > ahora:
                 lineas = [f"🚑 <b>Bajas</b> · {titulo}"]
                 for k, eq in (("local", loc), ("visita", vis)):
                     lista = d["bajas"][k]["bajas"]
