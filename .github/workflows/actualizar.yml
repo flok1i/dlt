@@ -1,0 +1,39 @@
+name: Actualizar datos
+
+on:
+  schedule:
+    # horas en UTC (Argentina = UTC-3): 08, 12, 16, 19 y 22 hs de Argentina
+    - cron: "0 11,15,19,22 * * *"
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}   # boton "Run workflow" para correrlo a mano
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bajar datos y calcular
+        run: python scripts/actualizar.py
+      - name: Guardar cambios
+        run: |
+          git config user.name "DLT Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cache docs/data
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "Datos actualizados $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git pull --rebase
+            git push
+          fi
