@@ -7,7 +7,13 @@ on:
     - cron: "0 1 * * *"
     # Alineaciones: cada 15 minutos revisa si hay partidos por empezar (si no hay, no hace nada)
     - cron: "7,22,37,52 * * * *"
-  workflow_dispatch: {}   # boton "Run workflow" para correrlo a mano
+  # boton "Run workflow" (a mano) y disparador externo de cron-job.org
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "completa o alineaciones"
+        required: false
+        default: completa
 
 permissions:
   contents: write
@@ -27,7 +33,7 @@ jobs:
           python-version: "3.12"
       - name: Bajar datos y calcular
         run: |
-          if [ "${{ github.event.schedule }}" = "7,22,37,52 * * * *" ]; then
+          if [ "${{ github.event.schedule }}" = "7,22,37,52 * * * *" ] || [ "${{ inputs.modo }}" = "alineaciones" ]; then
             python scripts/actualizar.py --alineaciones
           else
             python scripts/actualizar.py
